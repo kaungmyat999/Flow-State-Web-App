@@ -1,24 +1,10 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react"
+import type { Task, SubTask } from "@/lib/types"
 
 export type TimerMode = "pomodoro" | "shortBreak" | "longBreak"
 export type TimerStatus = "idle" | "running" | "paused" | "completed"
-
-export interface Task {
-  id: string
-  title: string
-  completed: boolean
-  pomodorosCompleted: number
-  totalMinutes: number
-  totalBreakMinutes: number // Added to track break time
-  createdAt: Date
-  dueDate?: Date // Added for task scheduling
-  hasBeenCompletedBefore: boolean
-  energyLevel?: number // Added to track energy level (1-4)
-  startTime?: Date // Added to track when the task was first focused on
-  endTime?: Date // Added to track when the task was completed
-}
 
 export interface Settings {
   pomodoroLength: number
@@ -68,6 +54,12 @@ interface PomodoroContextType {
   clearAllTasks: () => void
   clearCompletedTasks: () => void
   updateTaskEnergyLevel: (id: string, level: number) => void // Added to update energy level
+
+  // Subtasks
+  addSubtask: (parentId: string, title: string) => void
+  updateSubtask: (parentId: string, subtaskId: string, updates: Partial<SubTask>) => void
+  removeSubtask: (parentId: string, subtaskId: string) => void
+  completeSubtask: (parentId: string, subtaskId: string, completed: boolean) => void
 
   // Settings
   settings: Settings
@@ -368,6 +360,7 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
       energyLevel: undefined, // Initialize energy level as undefined
       startTime: undefined,
       endTime: undefined,
+      subtasks: [], // Initialize empty subtasks array
     }
 
     setTasks((prev) => [...prev, newTask])
@@ -433,9 +426,16 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     setTasks((prev) =>
       prev.map((task) => {
         if (task.id === id) {
+          // If completing a task, also complete all subtasks
+          const updatedSubtasks = task.subtasks?.map((subtask) => ({
+            ...subtask,
+            completed: completed ? true : subtask.completed,
+          }))
+
           return {
             ...task,
             completed,
+            subtasks: updatedSubtasks,
             // Add end time when completing a task
             endTime: completed ? new Date() : undefined,
             // Only update hasBeenCompletedBefore if we're completing the task for the first time
@@ -583,6 +583,93 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  // Subtask functions
+  const addSubtask = (parentId: string, title: string) => {
+    const newSubtask: SubTask = {
+      id: Date.now().toString(),
+      title,
+      completed: false,
+      createdAt: new Date(),
+      parentId,
+    }
+
+    setTasks((prev) =>
+      prev.map((task) => {
+        if (task.id === parentId) {
+          return {
+            ...task,
+            subtasks: [...(task.subtasks || []), newSubtask],
+          }
+        }
+        return task
+      }),
+    )
+  }
+
+  const updateSubtask = (parentId: string, subtaskId: string, updates: Partial<SubTask>) => {
+    setTasks((prev) =>
+      prev.map((task) => {
+        if (task.id === parentId && task.subtasks) {
+          return {
+            ...task,
+            subtasks: task.subtasks.map((subtask) => (subtask.id === subtaskId ? { ...subtask, ...updates } : subtask)),
+          }
+        }
+        return task
+      }),
+    )
+  }
+
+  const removeSubtask = (parentId: string, subtaskId: string) => {
+    setTasks((prev) =>
+      prev.map((task) => {
+        if (task.id === parentId && task.subtasks) {
+          return {
+            ...task,
+            subtasks: task.subtasks.filter((subtask) => subtask.id !== subtaskId),
+          }
+        }
+        return task
+      }),
+    )
+  }
+
+  const completeSubtask = (parentId: string, subtaskId: string, completed: boolean) => {
+    setTasks((prev) =>
+      prev.map((task) => {
+        if (task.id === parentId && task.subtasks) {
+          const updatedSubtasks = task.subtasks.map((subtask) =>
+            subtask.id === subtaskId ? { ...subtask, completed } : subtask,
+          )
+
+          // Check if all subtasks are completed
+          const allSubtasksCompleted = updatedSubtasks.every((subtask) => subtask.completed)
+
+          return {
+            ...task,
+            subtasks: updatedSubtasks,
+            // Optionally auto-complete the parent task if all subtasks are completed
+            // completed: allSubtasksCompleted ? true : task.completed
+          }
+        }
+        return task
+      }),
+    )
+  }
+
+  const updateTaskEnergyLevel = (id: string, level: number) => {
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === id
+          ? {
+              ...task,
+              energyLevel: level,
+            }
+          : task,
+      ),
+    )
+  }
+
   // Load data from localStorage on initial render
   useEffect(() => {
     const loadedSettings = localStorage.getItem("pomodoroSettings")
@@ -616,6 +703,12 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
             hasBeenCompletedBefore: task.hasBeenCompletedBefore || task.completed || false, // Handle older data
             startTime: task.startTime ? new Date(task.startTime) : undefined,
             endTime: task.endTime ? new Date(task.endTime) : undefined,
+            subtasks: task.subtasks
+              ? task.subtasks.map((subtask: any) => ({
+                  ...subtask,
+                  createdAt: new Date(subtask.createdAt),
+                }))
+              : [],
           })),
         )
       } catch (e) {
@@ -670,19 +763,6 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     }
   }, [intervalId])
 
-  const updateTaskEnergyLevel = (id: string, level: number) => {
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === id
-          ? {
-              ...task,
-              energyLevel: level,
-            }
-          : task,
-      ),
-    )
-  }
-
   // Update the context value to include the new function
   const value = {
     timerMode,
@@ -697,7 +777,7 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     tasks,
     activeTaskId,
     addTask,
-    updateTask, // Add the new function
+    updateTask,
     removeTask,
     setActiveTask,
     completeTask,
@@ -706,6 +786,12 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     clearAllTasks,
     clearCompletedTasks,
     updateTaskEnergyLevel,
+
+    // Subtask functions
+    addSubtask,
+    updateSubtask,
+    removeSubtask,
+    completeSubtask,
 
     settings,
     updateSettings,
