@@ -10,15 +10,4 @@ export interface Task {
   energyLevel?: number
   startTime?: Date
   endTime?: Date
-  dueDate?: Date
-  subtasks?: SubTask[]
-  parentId?: string
-}
-
-export interface SubTask {
-  id: string
-  title: string
-  completed: boolean
-  createdAt: Date
-  parentId: string
 }

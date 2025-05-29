@@ -1,17 +1,30 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react"
-import type { Task, SubTask } from "@/lib/types"
+import type React from "react"
+import { createContext, useState, useEffect, useContext } from "react"
+
+interface Task {
+  id: string
+  title: string
+  completed: boolean
+  pomodorosCompleted: number
+  totalMinutes: number
+  totalBreakMinutes: number
+  createdAt: Date
+  hasBeenCompletedBefore: boolean
+  energyLevel?: number
+  startTime?: Date
+  endTime?: Date
+  dueDate?: Date
+}
 
 export type TimerMode = "pomodoro" | "shortBreak" | "longBreak"
-export type TimerStatus = "idle" | "running" | "paused" | "completed"
 
-export interface Settings {
+interface PomodoroContextProps {
   pomodoroLength: number
   shortBreakLength: number
   longBreakLength: number
   alarmEnabled: boolean
-  // Add meditation settings
   meditationDuration: number
   breathInDuration: number
   holdInDuration: number
@@ -19,65 +32,43 @@ export interface Settings {
   holdOutDuration: number
 }
 
-// Add meditation tracking to PomodoroHistory interface
-export interface PomodoroHistory {
-  date: string
-  tasksCompleted: number
-  totalPomodoros: number
-  totalMinutes: number
-  totalBreakMinutes: number
-  totalMeditationMinutes: number // Added to track meditation time
-}
-
-// Add meditation tracking function to PomodoroContextType
-interface PomodoroContextType {
-  // Timer state
+interface PomodoroState {
+  tasks: Task[]
+  addTask: (title: string, dueDate?: Date) => void
+  updateTask: (id: string, updates: Partial<Task>) => void
+  removeTask: (id: string) => void
+  completeTask: (id: string, completed: boolean) => void
+  updateTaskEnergyLevel: (id: string, energyLevel: number) => void
+  activeTaskId: string | null
+  setActiveTask: (id: string | null) => void
+  clearAllTasks: () => void
+  clearCompletedTasks: () => void
+  timerStatus: "idle" | "running" | "paused"
   timerMode: TimerMode
-  timerStatus: TimerStatus
+  setTimerMode: React.Dispatch<React.SetStateAction<TimerMode>>
   timeRemaining: number
-  setTimerMode: (mode: TimerMode) => void
+  settings: PomodoroContextProps
+  updateSettings: (newSettings: Partial<PomodoroContextProps>) => void
   startTimer: () => void
   pauseTimer: () => void
   resetTimer: () => void
-  playAlarm: () => void // Added explicit function to play alarm
-
-  // Tasks
-  tasks: Task[]
-  activeTaskId: string | null
-  addTask: (title: string, dueDate?: Date) => void // Updated to include dueDate
-  updateTask: (id: string, updates: Partial<Task>) => void // Added for task editing
-  removeTask: (id: string) => void
-  setActiveTask: (id: string | null) => void
-  completeTask: (id: string, completed: boolean) => void
-  incrementPomodoroCount: (id: string, minutes: number) => void
-  incrementBreakTime: (id: string, minutes: number) => void // Added to track break time
-  clearAllTasks: () => void
-  clearCompletedTasks: () => void
-  updateTaskEnergyLevel: (id: string, level: number) => void // Added to update energy level
-
-  // Subtasks
-  addSubtask: (parentId: string, title: string) => void
-  updateSubtask: (parentId: string, subtaskId: string, updates: Partial<SubTask>) => void
-  removeSubtask: (parentId: string, subtaskId: string) => void
-  completeSubtask: (parentId: string, subtaskId: string, completed: boolean) => void
-
-  // Settings
-  settings: Settings
-  updateSettings: (newSettings: Settings) => void
-
-  // History
-  history: PomodoroHistory[]
-
-  // Add meditation tracking
-  addMeditationSession: (minutes: number) => void
+  playAlarm: () => void
+  addMeditationSession: (duration: number) => void
+  history: {
+    date: string
+    totalPomodoros: number
+    totalMinutes: number
+    totalBreakMinutes: number
+    totalMeditationMinutes: number
+    tasksCompleted: number
+  }[]
 }
 
-const defaultSettings: Settings = {
+const defaultSettings: PomodoroContextProps = {
   pomodoroLength: 25,
   shortBreakLength: 5,
   longBreakLength: 15,
   alarmEnabled: true,
-  // Default meditation settings
   meditationDuration: 10,
   breathInDuration: 4,
   holdInDuration: 2,
@@ -85,326 +76,42 @@ const defaultSettings: Settings = {
   holdOutDuration: 2,
 }
 
-const PomodoroContext = createContext<PomodoroContextType | undefined>(undefined)
+const PomodoroContext = createContext<PomodoroState>({
+  tasks: [],
+  addTask: () => {},
+  updateTask: () => {},
+  removeTask: () => {},
+  completeTask: () => {},
+  updateTaskEnergyLevel: () => {},
+  activeTaskId: null,
+  setActiveTask: () => {},
+  clearAllTasks: () => {},
+  clearCompletedTasks: () => {},
+  timerStatus: "idle",
+  timerMode: "pomodoro",
+  setTimerMode: () => {},
+  timeRemaining: defaultSettings.pomodoroLength * 60,
+  settings: defaultSettings,
+  updateSettings: () => {},
+  startTimer: () => {},
+  pauseTimer: () => {},
+  resetTimer: () => {},
+  playAlarm: () => {},
+  addMeditationSession: () => {},
+  history: [],
+})
 
-// Update the PomodoroProvider component to include meditation tracking
-export function PomodoroProvider({ children }: { children: ReactNode }) {
-  // Timer state
-  const [timerMode, setTimerMode] = useState<TimerMode>("pomodoro")
-  const [timerStatus, setTimerStatus] = useState<TimerStatus>("idle")
-  const [timeRemaining, setTimeRemaining] = useState<number>(0)
-  const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null)
-  const [lastActiveTaskId, setLastActiveTaskId] = useState<string | null>(null)
-
-  // Tasks state
+const PomodoroProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [tasks, setTasks] = useState<Task[]>([])
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
-
-  // Settings state
-  const [settings, setSettings] = useState<Settings>(defaultSettings)
-
-  // History state
-  const [history, setHistory] = useState<PomodoroHistory[]>([])
-
-  // Audio context reference
-  const audioContextRef = useRef<AudioContext | null>(null)
-
-  // Function to play alarm sound using Web Audio API
-  const playAlarm = () => {
-    if (!settings.alarmEnabled) return
-
-    try {
-      // Create AudioContext if it doesn't exist
-      if (!audioContextRef.current) {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
-        if (!AudioContextClass) {
-          console.error("Web Audio API is not supported in this browser")
-          return
-        }
-        audioContextRef.current = new AudioContextClass()
-      }
-
-      // Resume audio context if it's suspended (needed for some browsers)
-      if (audioContextRef.current.state === "suspended") {
-        audioContextRef.current.resume()
-      }
-
-      // Create a sequence of beeps
-      const playBeepSequence = () => {
-        const ctx = audioContextRef.current
-        if (!ctx) return
-
-        const currentTime = ctx.currentTime
-
-        // Create multiple beeps with different frequencies
-        const beepCount = 3
-        const beepDuration = 0.2
-        const pauseDuration = 0.1
-
-        for (let i = 0; i < beepCount; i++) {
-          // Create oscillator
-          const oscillator = ctx.createOscillator()
-          const gainNode = ctx.createGain()
-
-          // Set properties
-          oscillator.type = "sine"
-          oscillator.frequency.value = 800 + i * 200 // Increasing frequency for each beep
-
-          // Connect nodes
-          oscillator.connect(gainNode)
-          gainNode.connect(ctx.destination)
-
-          // Schedule the beep
-          const startTime = currentTime + i * (beepDuration + pauseDuration)
-          const stopTime = startTime + beepDuration
-
-          // Add fade in/out to avoid clicks
-          gainNode.gain.setValueAtTime(0, startTime)
-          gainNode.gain.linearRampToValueAtTime(0.5, startTime + 0.01)
-          gainNode.gain.setValueAtTime(0.5, stopTime - 0.01)
-          gainNode.gain.linearRampToValueAtTime(0, stopTime)
-
-          // Start and stop
-          oscillator.start(startTime)
-          oscillator.stop(stopTime)
-        }
-      }
-
-      // Play the beep sequence
-      playBeepSequence()
-
-      console.log("Alarm sound played successfully using Web Audio API")
-    } catch (error) {
-      console.error("Error playing alarm sound:", error)
-    }
-  }
-
-  // Initialize timer based on mode
-  useEffect(() => {
-    let initialTime = 0
-
-    switch (timerMode) {
-      case "pomodoro":
-        initialTime = settings.pomodoroLength * 60
-        break
-      case "shortBreak":
-        initialTime = settings.shortBreakLength * 60
-        break
-      case "longBreak":
-        initialTime = settings.longBreakLength * 60
-        break
-    }
-
-    setTimeRemaining(initialTime)
-
-    // Clear any existing interval when mode changes
-    if (intervalId) {
-      clearInterval(intervalId)
-      setIntervalId(null)
-    }
-
-    setTimerStatus("idle")
-  }, [timerMode, settings])
-
-  // Timer functions
-  const startTimer = () => {
-    if (timerStatus === "running") return
-
-    setTimerStatus("running")
-
-    // If starting a break timer, store the current active task ID
-    if (timerMode !== "pomodoro" && activeTaskId) {
-      setLastActiveTaskId(activeTaskId)
-    }
-
-    const interval = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval)
-          handleTimerComplete()
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-
-    setIntervalId(interval)
-  }
-
-  const pauseTimer = () => {
-    if (intervalId) {
-      clearInterval(intervalId)
-      setIntervalId(null)
-    }
-    setTimerStatus("paused")
-  }
-
-  const resetTimer = () => {
-    if (intervalId) {
-      clearInterval(intervalId)
-      setIntervalId(null)
-    }
-
-    let resetTime = 0
-    switch (timerMode) {
-      case "pomodoro":
-        resetTime = settings.pomodoroLength * 60
-        break
-      case "shortBreak":
-        resetTime = settings.shortBreakLength * 60
-        break
-      case "longBreak":
-        resetTime = settings.longBreakLength * 60
-        break
-    }
-
-    setTimeRemaining(resetTime)
-    setTimerStatus("idle")
-  }
-
-  const handleTimerComplete = () => {
-    setTimerStatus("completed")
-
-    // Play alarm sound
-    playAlarm()
-
-    // Update task and history based on timer mode
-    const today = new Date().toISOString().split("T")[0]
-
-    if (timerMode === "pomodoro" && activeTaskId) {
-      // A pomodoro was completed
-      incrementPomodoroCount(activeTaskId, settings.pomodoroLength)
-
-      // Update history for pomodoro
-      setHistory((prev) => {
-        const existingEntry = prev.find((entry) => entry.date === today)
-
-        if (existingEntry) {
-          return prev.map((entry) =>
-            entry.date === today
-              ? {
-                  ...entry,
-                  totalPomodoros: entry.totalPomodoros + 1,
-                  totalMinutes: entry.totalMinutes + settings.pomodoroLength,
-                }
-              : entry,
-          )
-        } else {
-          return [
-            ...prev,
-            {
-              date: today,
-              tasksCompleted: 0,
-              totalPomodoros: 1,
-              totalMinutes: settings.pomodoroLength,
-              totalBreakMinutes: 0,
-              totalMeditationMinutes: 0,
-            },
-          ]
-        }
-      })
-    } else if (timerMode !== "pomodoro" && lastActiveTaskId) {
-      // A break was completed
-      const breakMinutes = timerMode === "shortBreak" ? settings.shortBreakLength : settings.longBreakLength
-      incrementBreakTime(lastActiveTaskId, breakMinutes)
-
-      // Update history for break
-      setHistory((prev) => {
-        const existingEntry = prev.find((entry) => entry.date === today)
-
-        if (existingEntry) {
-          return prev.map((entry) =>
-            entry.date === today
-              ? {
-                  ...entry,
-                  totalBreakMinutes: (entry.totalBreakMinutes || 0) + breakMinutes,
-                }
-              : entry,
-          )
-        } else {
-          return [
-            ...prev,
-            {
-              date: today,
-              tasksCompleted: 0,
-              totalPomodoros: 0,
-              totalMinutes: 0,
-              totalBreakMinutes: breakMinutes,
-              totalMeditationMinutes: 0,
-            },
-          ]
-        }
-      })
-    }
-
-    // Auto switch to the next mode
-    if (timerMode === "pomodoro") {
-      setTimerMode("shortBreak")
-    } else {
-      setTimerMode("pomodoro")
-    }
-  }
-
-  // Task functions
-  const addTask = (title: string, dueDate?: Date) => {
-    const newTask: Task = {
-      id: Date.now().toString(),
-      title,
-      completed: false,
-      pomodorosCompleted: 0,
-      totalMinutes: 0,
-      totalBreakMinutes: 0, // Initialize break time
-      createdAt: new Date(),
-      dueDate, // Add due date
-      hasBeenCompletedBefore: false,
-      energyLevel: undefined, // Initialize energy level as undefined
-      startTime: undefined,
-      endTime: undefined,
-      subtasks: [], // Initialize empty subtasks array
-    }
-
-    setTasks((prev) => [...prev, newTask])
-
-    // If no active task, set this as active
-    if (activeTaskId === null) {
-      setActiveTaskId(newTask.id)
-    }
-  }
-
-  // Add new function to update task
-  const updateTask = (id: string, updates: Partial<Task>) => {
-    setTasks((prev) =>
-      prev.map((task) => {
-        if (task.id === id) {
-          return { ...task, ...updates }
-        }
-        return task
-      }),
-    )
-  }
-
-  const removeTask = (id: string) => {
-    setTasks((prev) => prev.filter((task) => task.id !== id))
-
-    // If removing active task, set next task as active or null
-    if (activeTaskId === id) {
-      const remainingTasks = tasks.filter((task) => task.id !== id && !task.completed)
-      setActiveTaskId(remainingTasks.length > 0 ? remainingTasks[0].id : null)
-    }
-
-    // Also clear lastActiveTaskId if it matches
-    if (lastActiveTaskId === id) {
-      setLastActiveTaskId(null)
-    }
-  }
 
   const setActiveTask = (id: string | null) => {
     setActiveTaskId(id)
 
     // If setting a new active task, record the start time if it doesn't exist
     if (id) {
-      setTasks((prev) =>
-        prev.map((task) => {
+      setTasks((prevTasks) =>
+        prevTasks.map((task) => {
           if (task.id === id && !task.startTime) {
             return {
               ...task,
@@ -417,396 +124,371 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const [timerStatus, setTimerStatus] = useState<"idle" | "running" | "paused">("idle")
+  const [timerMode, setTimerMode] = useState<TimerMode>("pomodoro")
+  const [timeRemaining, setTimeRemaining] = useState(defaultSettings.pomodoroLength * 60)
+  const [settings, setSettings] = useState<PomodoroContextProps>(defaultSettings)
+  const [history, setHistory] = useState<
+    {
+      date: string
+      totalPomodoros: number
+      totalMinutes: number
+      totalBreakMinutes: number
+      totalMeditationMinutes: number
+      tasksCompleted: number
+    }[]
+  >([])
+
+  useEffect(() => {
+    let initialTime = 0
+    switch (timerMode) {
+      case "pomodoro":
+        initialTime = settings.pomodoroLength * 60
+        break
+      case "shortBreak":
+        initialTime = settings.shortBreakLength * 60
+        break
+      case "longBreak":
+        initialTime = settings.longBreakLength * 60
+        break
+    }
+    setTimeRemaining(initialTime)
+  }, [timerMode, settings.pomodoroLength, settings.shortBreakLength, settings.longBreakLength])
+
+  const addTask = (title: string, dueDate?: Date) => {
+    const newTask: Task = {
+      id: Math.random().toString(36).substring(2, 9),
+      title,
+      completed: false,
+      pomodorosCompleted: 0,
+      totalMinutes: 0,
+      totalBreakMinutes: 0,
+      createdAt: new Date(),
+      hasBeenCompletedBefore: false,
+      dueDate,
+    }
+    setTasks([...tasks, newTask])
+  }
+
+  const updateTask = (id: string, updates: Partial<Task>) => {
+    setTasks(tasks.map((task) => (task.id === id ? { ...task, ...updates } : task)))
+  }
+
+  const removeTask = (id: string) => {
+    setTasks(tasks.filter((task) => task.id !== id))
+  }
+
   const completeTask = (id: string, completed: boolean) => {
-    // Get the task before updating
-    const task = tasks.find((t) => t.id === id)
-    if (!task) return
-
-    // Update the task in the tasks array
-    setTasks((prev) =>
-      prev.map((task) => {
-        if (task.id === id) {
-          // If completing a task, also complete all subtasks
-          const updatedSubtasks = task.subtasks?.map((subtask) => ({
-            ...subtask,
-            completed: completed ? true : subtask.completed,
-          }))
-
-          return {
-            ...task,
-            completed,
-            subtasks: updatedSubtasks,
-            // Add end time when completing a task
-            endTime: completed ? new Date() : undefined,
-            // Only update hasBeenCompletedBefore if we're completing the task for the first time
-            hasBeenCompletedBefore: completed ? true : task.hasBeenCompletedBefore,
-          }
-        }
-        return task
-      }),
-    )
-
-    // Update the history based on completion status change
-    const today = new Date().toISOString().split("T")[0]
-
-    if (completed) {
-      // Task is being completed - always increment the counter
-      setHistory((prev) => {
-        const existingEntry = prev.find((entry) => entry.date === today)
-
-        if (existingEntry) {
-          return prev.map((entry) =>
-            entry.date === today ? { ...entry, tasksCompleted: entry.tasksCompleted + 1 } : entry,
-          )
-        } else {
-          return [
-            ...prev,
-            {
-              date: today,
-              tasksCompleted: 1,
-              totalPomodoros: 0,
-              totalMinutes: 0,
-              totalBreakMinutes: 0,
-              totalMeditationMinutes: 0,
-            },
-          ]
-        }
-      })
-    } else if (!completed) {
-      // Task is being uncompleted - always decrement the counter
-      setHistory((prev) => {
-        const existingEntry = prev.find((entry) => entry.date === today)
-
-        if (existingEntry && existingEntry.tasksCompleted > 0) {
-          return prev.map((entry) =>
-            entry.date === today ? { ...entry, tasksCompleted: entry.tasksCompleted - 1 } : entry,
-          )
-        }
-        return prev
-      })
-    }
-
-    // If completing active task, set next task as active
-    if (completed && activeTaskId === id) {
-      const nextTask = tasks.find((task) => !task.completed && task.id !== id)
-      setActiveTaskId(nextTask ? nextTask.id : null)
-    }
-
-    // Also clear lastActiveTaskId if it matches and task is completed
-    if (completed && lastActiveTaskId === id) {
-      setLastActiveTaskId(null)
-    }
+    setTasks(tasks.map((task) => (task.id === id ? { ...task, completed, hasBeenCompletedBefore: true } : task)))
   }
 
-  const incrementPomodoroCount = (id: string, minutes: number) => {
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === id
-          ? {
-              ...task,
-              pomodorosCompleted: task.pomodorosCompleted + 1,
-              totalMinutes: task.totalMinutes + minutes,
-            }
-          : task,
-      ),
-    )
-  }
-
-  const incrementBreakTime = (id: string, minutes: number) => {
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === id
-          ? {
-              ...task,
-              totalBreakMinutes: (task.totalBreakMinutes || 0) + minutes,
-            }
-          : task,
-      ),
-    )
+  const updateTaskEnergyLevel = (id: string, energyLevel: number) => {
+    setTasks(tasks.map((task) => (task.id === id ? { ...task, energyLevel } : task)))
   }
 
   const clearAllTasks = () => {
     setTasks([])
     setActiveTaskId(null)
-    setLastActiveTaskId(null)
   }
 
   const clearCompletedTasks = () => {
-    setTasks((prev) => prev.filter((task) => !task.completed))
+    setTasks(tasks.filter((task) => !task.completed))
+  }
 
-    // Clear lastActiveTaskId if it points to a completed task
-    if (lastActiveTaskId) {
-      const task = tasks.find((t) => t.id === lastActiveTaskId)
-      if (task && task.completed) {
-        setLastActiveTaskId(null)
+  const updateSettings = (newSettings: Partial<PomodoroContextProps>) => {
+    setSettings({ ...settings, ...newSettings })
+  }
+
+  const startTimer = () => {
+    setTimerStatus("running")
+  }
+
+  const pauseTimer = () => {
+    setTimerStatus("paused")
+  }
+
+  const resetTimer = () => {
+    setTimerStatus("idle")
+    let resetTime = 0
+    switch (timerMode) {
+      case "pomodoro":
+        resetTime = settings.pomodoroLength * 60
+        break
+      case "shortBreak":
+        resetTime = settings.shortBreakLength * 60
+        break
+      case "longBreak":
+        resetTime = settings.longBreakLength * 60
+        break
+    }
+    setTimeRemaining(resetTime)
+  }
+
+  const playAlarm = () => {
+    // Try using a simple HTML Audio element first (more reliable)
+    try {
+      const audio = new Audio()
+      audio.src =
+        "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YWoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJXfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OWRgsRVqzn7axZFQdBmt7ywW4jBSyG0PPVhTQHHGy/7+WYSQ0PU6vm7q5bFwY+l93zxHElBCmDzvPYiDYIGWe77OihTBALT6bj8bdjHAY3kdfyzHosBSV2x/DdkEEKFF207OuoVRQKRp/g8r5sIQUxh9Hz04IzBh5uwO/jlkYLEVas5+2sWRUHQZre8sFuIwUshtDz1YU0BxxsvO/mmEkND1Or5u6uWxcGPpfd88RxJQQpg87z2Ig2CBlnu+zooUwQC0+m4/G3YxwGN5HX8sx6LAUldsfw3ZBBChRdtOzrqFUUCkaf4PK+bCEFMYfR89OCMwYebsDv45ZGCxFWrOftq1kVB0Ga3vLBbiMFLIbQ89WFNAccbLzv5phJDQ9Tqvm7q5bFwY+l93zxHElBCmDzvPYiDYIGWe77OihTBALT6bj8bdjHAY3kdfyzHosBSV2x/HdkEEKFF207OuoVRQKRp/g8r5sIQUxh9Hz04IzBh5uwO/jlkYLEVas5+2sWRUHQZre8sFuIwUshtDz1YU0BxxsvO/mmEkND1Tqvm7q5bFwY+l93zxHElBCmDzvPYiDYIGWe77OihTBALT6bj8bdjHAY3kdfyzHosBSV2x/HdkEEKFF207OuoVRQKRp/g8r5sIQUxh9Hz04IzBh5uwO/jlkYLEVas5+2sWRUHQZre8sFuIwUshtDz1YU0BxxsvO/mmEkND1Tqvm7q5bFwY+l93zxHElBCmDzvPYiDYIGWe77OihTBALT6bj8bdjHAY3kdfyzHosBS"
+      audio.volume = 0.5
+
+      // Play the audio
+      const playPromise = audio.play()
+
+      // Modern browsers return a promise from audio.play()
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log("Alarm sound played successfully using HTML Audio")
+          })
+          .catch((error) => {
+            console.error("HTML Audio playback failed:", error)
+            // Fall back to Web Audio API if HTML Audio fails
+            playWithWebAudio()
+          })
       }
+    } catch (error) {
+      console.error("Error with HTML Audio:", error)
+      // Fall back to Web Audio API
+      playWithWebAudio()
     }
   }
 
-  // Settings functions
-  const updateSettings = (newSettings: Settings) => {
-    setSettings(newSettings)
+  // Helper function to play sound with Web Audio API
+  const playWithWebAudio = () => {
+    try {
+      // Create a new AudioContext each time to avoid closed context issues
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+      if (!AudioContextClass) {
+        console.error("Web Audio API is not supported in this browser")
+        return
+      }
 
-    // Reset timer with new settings
-    resetTimer()
+      const ctx = new AudioContextClass()
+
+      // Create a sequence of beeps
+      const currentTime = ctx.currentTime
+
+      // Create multiple beeps with different frequencies
+      const beepCount = 3
+      const beepDuration = 0.2
+      const pauseDuration = 0.1
+
+      for (let i = 0; i < beepCount; i++) {
+        // Create oscillator
+        const oscillator = ctx.createOscillator()
+        const gainNode = ctx.createGain()
+
+        // Set properties
+        oscillator.type = "sine"
+        oscillator.frequency.value = 800 + i * 200 // Increasing frequency for each beep
+
+        // Connect nodes
+        oscillator.connect(gainNode)
+        gainNode.connect(ctx.destination)
+
+        // Schedule the beep
+        const startTime = currentTime + i * (beepDuration + pauseDuration)
+        const stopTime = startTime + beepDuration
+
+        // Add fade in/out to avoid clicks
+        gainNode.gain.setValueAtTime(0, startTime)
+        gainNode.gain.linearRampToValueAtTime(0.5, startTime + 0.01)
+        gainNode.gain.setValueAtTime(0.5, stopTime - 0.01)
+        gainNode.gain.linearRampToValueAtTime(0, stopTime)
+
+        // Start and stop
+        oscillator.start(startTime)
+        oscillator.stop(stopTime)
+      }
+
+      // Close the context after the last beep to clean up
+      setTimeout(
+        () => {
+          ctx.close().catch((err) => console.error("Error closing AudioContext:", err))
+        },
+        (beepCount * (beepDuration + pauseDuration) + 0.5) * 1000,
+      )
+
+      console.log("Alarm sound played successfully using Web Audio API")
+    } catch (error) {
+      console.error("Error playing alarm sound with Web Audio API:", error)
+    }
   }
 
-  // Add meditation tracking function
-  const addMeditationSession = (minutes: number) => {
+  const addMeditationSession = (duration: number) => {
     const today = new Date().toISOString().split("T")[0]
-
-    setHistory((prev) => {
-      const existingEntry = prev.find((entry) => entry.date === today)
-
-      if (existingEntry) {
-        return prev.map((entry) =>
-          entry.date === today
+    setHistory((prevHistory) => {
+      const existingDay = prevHistory.find((day) => day.date === today)
+      if (existingDay) {
+        return prevHistory.map((day) =>
+          day.date === today
             ? {
-                ...entry,
-                totalMeditationMinutes: (entry.totalMeditationMinutes || 0) + minutes,
+                ...day,
+                totalMeditationMinutes: (day.totalMeditationMinutes || 0) + duration,
               }
-            : entry,
+            : day,
         )
       } else {
         return [
-          ...prev,
+          ...prevHistory,
           {
             date: today,
-            tasksCompleted: 0,
             totalPomodoros: 0,
             totalMinutes: 0,
             totalBreakMinutes: 0,
-            totalMeditationMinutes: minutes,
+            totalMeditationMinutes: duration,
+            tasksCompleted: 0,
           },
         ]
       }
     })
   }
 
-  // Subtask functions
-  const addSubtask = (parentId: string, title: string) => {
-    const newSubtask: SubTask = {
-      id: Date.now().toString(),
-      title,
-      completed: false,
-      createdAt: new Date(),
-      parentId,
-    }
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout
 
-    setTasks((prev) =>
-      prev.map((task) => {
-        if (task.id === parentId) {
-          return {
-            ...task,
-            subtasks: [...(task.subtasks || []), newSubtask],
-          }
-        }
-        return task
-      }),
-    )
-  }
+    if (timerStatus === "running" && timeRemaining > 0) {
+      intervalId = setInterval(() => {
+        setTimeRemaining((prevTime) => prevTime - 1)
+      }, 1000)
+    } else if (timeRemaining === 0) {
+      clearInterval(intervalId)
+      playAlarm() // Play alarm when timer reaches zero
 
-  const updateSubtask = (parentId: string, subtaskId: string, updates: Partial<SubTask>) => {
-    setTasks((prev) =>
-      prev.map((task) => {
-        if (task.id === parentId && task.subtasks) {
-          return {
-            ...task,
-            subtasks: task.subtasks.map((subtask) => (subtask.id === subtaskId ? { ...subtask, ...updates } : subtask)),
-          }
-        }
-        return task
-      }),
-    )
-  }
-
-  const removeSubtask = (parentId: string, subtaskId: string) => {
-    setTasks((prev) =>
-      prev.map((task) => {
-        if (task.id === parentId && task.subtasks) {
-          return {
-            ...task,
-            subtasks: task.subtasks.filter((subtask) => subtask.id !== subtaskId),
-          }
-        }
-        return task
-      }),
-    )
-  }
-
-  const completeSubtask = (parentId: string, subtaskId: string, completed: boolean) => {
-    setTasks((prev) =>
-      prev.map((task) => {
-        if (task.id === parentId && task.subtasks) {
-          const updatedSubtasks = task.subtasks.map((subtask) =>
-            subtask.id === subtaskId ? { ...subtask, completed } : subtask,
-          )
-
-          // Check if all subtasks are completed
-          const allSubtasksCompleted = updatedSubtasks.every((subtask) => subtask.completed)
-
-          return {
-            ...task,
-            subtasks: updatedSubtasks,
-            // Optionally auto-complete the parent task if all subtasks are completed
-            // completed: allSubtasksCompleted ? true : task.completed
-          }
-        }
-        return task
-      }),
-    )
-  }
-
-  const updateTaskEnergyLevel = (id: string, level: number) => {
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === id
-          ? {
-              ...task,
-              energyLevel: level,
+      // Update task stats if in pomodoro mode and a task is active
+      if (timerMode === "pomodoro" && activeTaskId) {
+        setTasks((prevTasks) =>
+          prevTasks.map((task) => {
+            if (task.id === activeTaskId) {
+              return {
+                ...task,
+                pomodorosCompleted: task.pomodorosCompleted + 1,
+                totalMinutes: task.totalMinutes + settings.pomodoroLength,
+              }
             }
-          : task,
-      ),
-    )
-  }
+            return task
+          }),
+        )
 
-  // Load data from localStorage on initial render
-  useEffect(() => {
-    const loadedSettings = localStorage.getItem("pomodoroSettings")
-    const loadedTasks = localStorage.getItem("pomodoroTasks")
-    const loadedHistory = localStorage.getItem("pomodoroHistory")
+        // Update history
+        const today = new Date().toISOString().split("T")[0]
+        setHistory((prevHistory) => {
+          const existingDay = prevHistory.find((day) => day.date === today)
+          const completedTasksToday = tasks.filter(
+            (task) =>
+              task.completed &&
+              task.hasBeenCompletedBefore &&
+              new Date(task.createdAt).toISOString().split("T")[0] === today,
+          ).length
 
-    if (loadedSettings) {
-      try {
-        const parsedSettings = JSON.parse(loadedSettings)
-        // Ensure all new settings fields are present
-        setSettings({
-          ...defaultSettings,
-          ...parsedSettings,
+          if (existingDay) {
+            return prevHistory.map((day) =>
+              day.date === today
+                ? {
+                    ...day,
+                    totalPomodoros: day.totalPomodoros + 1,
+                    totalMinutes: day.totalMinutes + settings.pomodoroLength,
+                    tasksCompleted: completedTasksToday,
+                  }
+                : day,
+            )
+          } else {
+            return [
+              ...prevHistory,
+              {
+                date: today,
+                totalPomodoros: 1,
+                totalMinutes: settings.pomodoroLength,
+                totalBreakMinutes: 0,
+                totalMeditationMinutes: 0,
+                tasksCompleted: completedTasksToday,
+              },
+            ]
+          }
         })
-      } catch (e) {
-        console.error("Error parsing settings:", e)
-        setSettings(defaultSettings)
-      }
-    }
+      } else if (timerMode === "shortBreak" || timerMode === "longBreak") {
+        // Update history with break time
+        const today = new Date().toISOString().split("T")[0]
+        const breakDuration = timerMode === "shortBreak" ? settings.shortBreakLength : settings.longBreakLength
 
-    if (loadedTasks) {
-      try {
-        const parsedTasks = JSON.parse(loadedTasks)
-        setTasks(
-          parsedTasks.map((task: any) => ({
-            ...task,
-            createdAt: new Date(task.createdAt),
-            dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
-            totalMinutes: task.totalMinutes || 0, // Handle older data without totalMinutes
-            totalBreakMinutes: task.totalBreakMinutes || 0, // Handle older data without totalBreakMinutes
-            hasBeenCompletedBefore: task.hasBeenCompletedBefore || task.completed || false, // Handle older data
-            startTime: task.startTime ? new Date(task.startTime) : undefined,
-            endTime: task.endTime ? new Date(task.endTime) : undefined,
-            subtasks: task.subtasks
-              ? task.subtasks.map((subtask: any) => ({
-                  ...subtask,
-                  createdAt: new Date(subtask.createdAt),
-                }))
-              : [],
-          })),
-        )
-      } catch (e) {
-        console.error("Error parsing tasks:", e)
-      }
-    }
-
-    // When loading history from localStorage, handle the new property
-    if (loadedHistory) {
-      try {
-        const parsedHistory = JSON.parse(loadedHistory)
-        setHistory(
-          parsedHistory.map((entry: any) => ({
-            ...entry,
-            totalMinutes: entry.totalMinutes || entry.totalPomodoros * 25,
-            totalBreakMinutes: entry.totalBreakMinutes || 0,
-            totalMeditationMinutes: entry.totalMeditationMinutes || 0, // Handle older data
-          })),
-        )
-      } catch (e) {
-        console.error("Error parsing history:", e)
-      }
-    }
-  }, [])
-
-  // Save data to localStorage when it changes
-  useEffect(() => {
-    localStorage.setItem("pomodoroSettings", JSON.stringify(settings))
-  }, [settings])
-
-  useEffect(() => {
-    localStorage.setItem("pomodoroTasks", JSON.stringify(tasks))
-  }, [tasks])
-
-  useEffect(() => {
-    localStorage.setItem("pomodoroHistory", JSON.stringify(history))
-  }, [history])
-
-  // Clean up interval and audio context on unmount
-  useEffect(() => {
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId)
-      }
-
-      // Close audio context if it exists
-      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-        audioContextRef.current.close().catch((err) => {
-          console.error("Error closing AudioContext:", err)
+        setHistory((prevHistory) => {
+          const existingDay = prevHistory.find((day) => day.date === today)
+          if (existingDay) {
+            return prevHistory.map((day) =>
+              day.date === today
+                ? {
+                    ...day,
+                    totalBreakMinutes: (day.totalBreakMinutes || 0) + breakDuration,
+                  }
+                : day,
+            )
+          } else {
+            return [
+              ...prevHistory,
+              {
+                date: today,
+                totalPomodoros: 0,
+                totalMinutes: 0,
+                totalBreakMinutes: breakDuration,
+                totalMeditationMinutes: 0,
+                tasksCompleted: 0,
+              },
+            ]
+          }
         })
       }
-    }
-  }, [intervalId])
 
-  // Update the context value to include the new function
-  const value = {
-    timerMode,
+      setTimerStatus("idle")
+      if (timerMode === "pomodoro") {
+        setTimerMode("shortBreak")
+        setTimeRemaining(settings.shortBreakLength * 60)
+      } else if (timerMode === "shortBreak") {
+        setTimerMode("pomodoro")
+        setTimeRemaining(settings.pomodoroLength * 60)
+      } else if (timerMode === "longBreak") {
+        setTimerMode("pomodoro")
+        setTimeRemaining(settings.pomodoroLength * 60)
+      }
+    }
+
+    return () => clearInterval(intervalId)
+  }, [timerStatus, timeRemaining, timerMode, settings, activeTaskId, tasks])
+
+  const value: PomodoroState = {
+    tasks,
+    addTask,
+    updateTask,
+    removeTask,
+    completeTask,
+    updateTaskEnergyLevel,
+    activeTaskId,
+    setActiveTask,
+    clearAllTasks,
+    clearCompletedTasks,
     timerStatus,
-    timeRemaining,
+    timerMode,
     setTimerMode,
+    timeRemaining,
+    settings,
+    updateSettings,
     startTimer,
     pauseTimer,
     resetTimer,
     playAlarm,
-
-    tasks,
-    activeTaskId,
-    addTask,
-    updateTask,
-    removeTask,
-    setActiveTask,
-    completeTask,
-    incrementPomodoroCount,
-    incrementBreakTime,
-    clearAllTasks,
-    clearCompletedTasks,
-    updateTaskEnergyLevel,
-
-    // Subtask functions
-    addSubtask,
-    updateSubtask,
-    removeSubtask,
-    completeSubtask,
-
-    settings,
-    updateSettings,
-
-    history,
     addMeditationSession,
+    history,
   }
 
   return <PomodoroContext.Provider value={value}>{children}</PomodoroContext.Provider>
 }
 
-export function usePomodoro() {
+const usePomodoro = () => {
   const context = useContext(PomodoroContext)
-  if (context === undefined) {
+  if (!context) {
     throw new Error("usePomodoro must be used within a PomodoroProvider")
   }
   return context
 }
+
+export { PomodoroProvider, usePomodoro }

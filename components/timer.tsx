@@ -5,7 +5,6 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Play, Pause, RotateCcw, Volume2 } from "lucide-react"
-import { useState as useStateHook, useEffect as useEffectHook, useRef as useRefHook } from "react"
 import { useEffect, useState } from "react"
 
 export default function Timer() {
@@ -55,104 +54,6 @@ export default function Timer() {
     playAlarm()
   }
 
-  // Simple Stopwatch component
-  function StopwatchTimer() {
-    const [isRunning, setIsRunning] = useStateHook(false)
-    const [elapsedTime, setElapsedTime] = useStateHook(0)
-    const intervalRef = useRefHook<NodeJS.Timeout | null>(null)
-    const startTimeRef = useRefHook<number | null>(null)
-
-    // Start the stopwatch
-    const handleStart = () => {
-      if (!isRunning) {
-        setIsRunning(true)
-        startTimeRef.current = Date.now() - elapsedTime
-        intervalRef.current = setInterval(() => {
-          setElapsedTime(Date.now() - (startTimeRef.current || 0))
-        }, 10)
-      }
-    }
-
-    // Pause the stopwatch
-    const handlePause = () => {
-      if (isRunning && intervalRef.current) {
-        clearInterval(intervalRef.current)
-        setIsRunning(false)
-      }
-    }
-
-    // Reset the stopwatch
-    const handleReset = () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
-      setIsRunning(false)
-      setElapsedTime(0)
-      startTimeRef.current = null
-    }
-
-    // Format elapsed time as mm:ss.ms
-    const formatElapsedTime = () => {
-      const totalSeconds = Math.floor(elapsedTime / 1000)
-      const minutes = Math.floor(totalSeconds / 60)
-      const seconds = totalSeconds % 60
-      const milliseconds = Math.floor((elapsedTime % 1000) / 10)
-
-      return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}.${milliseconds.toString().padStart(2, "0")}`
-    }
-
-    // Clean up interval on unmount
-    useEffectHook(() => {
-      return () => {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current)
-        }
-      }
-    }, [])
-
-    return (
-      <div className="mt-6 border-t pt-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 ${isRunning ? "bg-red-500" : "bg-blue-500"} rounded-full animate-pulse`}></div>
-            <div className="text-sm font-medium text-muted-foreground">STOPWATCH</div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div
-              className={`text-2xl font-mono font-bold tabular-nums bg-muted/30 px-4 py-2 rounded-md ${isRunning ? "text-red-500" : ""}`}
-            >
-              {formatElapsedTime()}
-            </div>
-
-            {!isRunning ? (
-              <Button
-                size="icon"
-                variant="default"
-                className="bg-blue-500 hover:bg-blue-600 h-8 w-8"
-                onClick={handleStart}
-              >
-                <Play className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                size="icon"
-                variant="default"
-                className="bg-red-500 hover:bg-red-600 h-8 w-8"
-                onClick={handlePause}
-              >
-                <Pause className="h-4 w-4" />
-              </Button>
-            )}
-            <Button size="icon" variant="outline" className="h-8 w-8" onClick={handleReset}>
-              <RotateCcw className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <Card className="shadow-lg">
       <CardContent className="pt-6">
@@ -195,7 +96,6 @@ export default function Timer() {
             </Button>
           </div>
         </div>
-        <StopwatchTimer />
       </CardContent>
     </Card>
   )
