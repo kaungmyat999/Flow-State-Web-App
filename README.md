@@ -1,30 +1,94 @@
-# Fork of Promodoro web app
+# Flow State - Productivity & Focus Web App
 
-*Automatically synced with your [v0.dev](https://v0.dev) deployments*
+A modern productivity application designed to help you achieve and maintain flow state through focused work sessions, mindful breaks, and comprehensive task management.
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/kaungmyat999s-projects/v0-fork-of-promodoro-web-app)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.dev-black?style=for-the-badge)](https://v0.dev/chat/projects/K0cBWRAnOAL)
+![Built with Next.js](https://img.shields.io/badge/Built%20with-Next.js-black?style=for-the-badge&logo=next.js)
+![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)
 
-## Overview
+## ✨ Features
 
-This repository will stay in sync with your deployed chats on [v0.dev](https://v0.dev).
-Any changes you make to your deployed app will be automatically pushed to this repository from [v0.dev](https://v0.dev).
+### 🍅 Pomodoro Timer
+- Customizable work/break intervals
+- Visual and audio notifications
+- Session tracking and statistics
 
-## Deployment
+### 📋 Task Management
+- Create, edit, and organize tasks
+- Link tasks to Pomodoro sessions
+- Progress tracking and completion metrics
 
-Your project is live at:
+### 🧘 Meditation & Mindfulness
+- Guided meditation timers
+- Breathing exercises
+- Mindfulness reminders
 
-**[https://vercel.com/kaungmyat999s-projects/v0-fork-of-promodoro-web-app](https://vercel.com/kaungmyat999s-projects/v0-fork-of-promodoro-web-app)**
+### 📊 Dashboard & Analytics
+- Productivity insights and statistics
+- Time tracking visualization
+- Goal progress monitoring
 
-## Build your app
+### ⚙️ Customization
+- Adjustable timer settings
+- Theme preferences (light/dark mode)
+- Personalized work sessions
 
-Continue building your app on:
+## 🚀 Getting Started
 
-**[https://v0.dev/chat/projects/K0cBWRAnOAL](https://v0.dev/chat/projects/K0cBWRAnOAL)**
+### Prerequisites
+- Node.js 18+ 
+- npm or yarn
 
-## How It Works
+### Installation
 
-1. Create and modify your project using [v0.dev](https://v0.dev)
-2. Deploy your chats from the v0 interface
-3. Changes are automatically pushed to this repository
-4. Vercel deploys the latest version from this repository
+1. Clone the repository:
+```bash
+git clone https://github.com/kaungmyat999/Flow-State-Web-App.git
+cd Flow-State-Web-App
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Run the development server:
+```bash
+npm run dev
+```
+
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## 🛠️ Technology Stack
+
+- **Framework**: Next.js 15
+- **UI Components**: Radix UI + Tailwind CSS
+- **Styling**: Tailwind CSS with animations
+- **State Management**: React Context API
+- **Icons**: Lucide React
+- **Forms**: React Hook Form with Zod validation
+- **Charts**: Recharts
+- **TypeScript**: Full type safety
+
+## 📦 Available Scripts
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run start` - Start production server
+- `npm run lint` - Run ESLint
+
+## 🌐 Deployment
+
+This application is deployed on Vercel:
+**[Live Demo](https://vercel.com/kaungmyat999s-projects/v0-fork-of-promodoro-web-app)**
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+Built with ❤️ to help you achieve peak productivity and flow state.
