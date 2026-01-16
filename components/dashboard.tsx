@@ -386,7 +386,7 @@ export default function Dashboard() {
                             <span>{date}</span>
                           </div>
 
-                          {tasks.map((task) => (
+                          {tasks.map((task: any) => (
                             <div key={task.id} className="flex flex-col space-y-2 border-b pb-4">
                               <div className="flex items-center justify-between">
                                 <div className="font-medium text-lg">{task.title}</div>

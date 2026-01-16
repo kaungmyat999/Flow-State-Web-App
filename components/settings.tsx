@@ -8,12 +8,23 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
-import { Volume2, VolumeX } from "lucide-react"
+import { Volume2, VolumeX, RotateCcw } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 export default function Settings() {
-  const { settings, updateSettings, playAlarm } = usePomodoro()
+  const { settings, updateSettings, playAlarm, resetAllData } = usePomodoro()
 
   // Timer settings
   const [pomodoroLength, setPomodoroLength] = useState(settings.pomodoroLength)
@@ -271,6 +282,57 @@ export default function Settings() {
         <Button onClick={handleSaveSettings} className="w-full mt-6">
           Save Settings
         </Button>
+
+        {/* Reset Data Section */}
+        <div className="mt-8 pt-6 border-t">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <h3 className="font-medium text-destructive">Reset All Data</h3>
+              <p className="text-sm text-muted-foreground">
+                Clear all tasks, settings, and history. This action cannot be undone.
+              </p>
+            </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm" className="flex items-center gap-2">
+                  <RotateCcw className="h-4 w-4" />
+                  Reset All Data
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action will permanently delete all your tasks, settings, and productivity history.
+                    This includes:
+                    <ul className="mt-2 list-disc list-inside text-sm">
+                      <li>All tasks and their progress</li>
+                      <li>Custom timer settings</li>
+                      <li>Meditation session history</li>
+                      <li>Daily productivity statistics</li>
+                    </ul>
+                    This action cannot be undone. Your data will be lost forever.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      resetAllData()
+                      toast({
+                        title: "All data has been reset",
+                        description: "Your tasks, settings, and history have been cleared.",
+                      })
+                    }}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Yes, Reset Everything
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </div>
       </CardContent>
     </Card>
   )

@@ -2,6 +2,7 @@
 
 import type React from "react"
 import { createContext, useState, useEffect, useContext } from "react"
+import { setCookie, getCookie, deleteCookie } from "@/lib/cookies"
 
 interface Task {
   id: string
@@ -54,6 +55,7 @@ interface PomodoroState {
   resetTimer: () => void
   playAlarm: () => void
   addMeditationSession: (duration: number) => void
+  resetAllData: () => void
   history: {
     date: string
     totalPomodoros: number
@@ -98,36 +100,110 @@ const PomodoroContext = createContext<PomodoroState>({
   resetTimer: () => {},
   playAlarm: () => {},
   addMeditationSession: () => {},
+  resetAllData: () => {},
   history: [],
 })
 
 const PomodoroProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
+  // Load initial data from cookies
+  const loadTasksFromCookies = (): Task[] => {
+    const tasksCookie = getCookie("flow-state-tasks")
+    if (tasksCookie) {
+      try {
+        const parsedTasks = JSON.parse(tasksCookie)
+        return parsedTasks.map((task: any) => ({
+          ...task,
+          createdAt: new Date(task.createdAt),
+          startTime: task.startTime ? new Date(task.startTime) : undefined,
+          endTime: task.endTime ? new Date(task.endTime) : undefined,
+          dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
+        }))
+      } catch (error) {
+        console.error("Error parsing tasks from cookie:", error)
+        return []
+      }
+    }
+    return []
+  }
+
+  const loadSettingsFromCookies = (): PomodoroContextProps => {
+    const settingsCookie = getCookie("flow-state-settings")
+    if (settingsCookie) {
+      try {
+        return { ...defaultSettings, ...JSON.parse(settingsCookie) }
+      } catch (error) {
+        console.error("Error parsing settings from cookie:", error)
+        return defaultSettings
+      }
+    }
+    return defaultSettings
+  }
+
+  const loadHistoryFromCookies = () => {
+    const historyCookie = getCookie("flow-state-history")
+    if (historyCookie) {
+      try {
+        return JSON.parse(historyCookie)
+      } catch (error) {
+        console.error("Error parsing history from cookie:", error)
+        return []
+      }
+    }
+    return []
+  }
+
+  const loadActiveTaskFromCookies = (): string | null => {
+    return getCookie("flow-state-active-task")
+  }
+
+  // Save functions
+  const saveTasksToCookie = (tasks: Task[]) => {
+    setCookie("flow-state-tasks", JSON.stringify(tasks))
+  }
+
+  const saveSettingsToCookie = (settings: PomodoroContextProps) => {
+    setCookie("flow-state-settings", JSON.stringify(settings))
+  }
+
+  const saveHistoryToCookie = (history: any[]) => {
+    setCookie("flow-state-history", JSON.stringify(history))
+  }
+
+  const saveActiveTaskToCookie = (activeTaskId: string | null) => {
+    if (activeTaskId) {
+      setCookie("flow-state-active-task", activeTaskId)
+    } else {
+      deleteCookie("flow-state-active-task")
+    }
+  }
+
+  const [tasks, setTasks] = useState<Task[]>(loadTasksFromCookies)
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(loadActiveTaskFromCookies())
 
   const setActiveTask = (id: string | null) => {
     setActiveTaskId(id)
+    saveActiveTaskToCookie(id)
 
     // If setting a new active task, record the start time if it doesn't exist
     if (id) {
-      setTasks((prevTasks) =>
-        prevTasks.map((task) => {
-          if (task.id === id && !task.startTime) {
-            return {
-              ...task,
-              startTime: new Date(),
-            }
+      const updatedTasks = tasks.map((task) => {
+        if (task.id === id && !task.startTime) {
+          return {
+            ...task,
+            startTime: new Date(),
           }
-          return task
-        }),
-      )
+        }
+        return task
+      })
+      setTasks(updatedTasks)
+      saveTasksToCookie(updatedTasks)
     }
   }
 
   const [timerStatus, setTimerStatus] = useState<"idle" | "running" | "paused">("idle")
   const [timerMode, setTimerMode] = useState<TimerMode>("pomodoro")
   const [timeRemaining, setTimeRemaining] = useState(defaultSettings.pomodoroLength * 60)
-  const [settings, setSettings] = useState<PomodoroContextProps>(defaultSettings)
+  const [settings, setSettings] = useState<PomodoroContextProps>(loadSettingsFromCookies)
   const [history, setHistory] = useState<
     {
       date: string
@@ -137,7 +213,7 @@ const PomodoroProvider: React.FC<{ children: React.ReactNode }> = ({ children })
       totalMeditationMinutes: number
       tasksCompleted: number
     }[]
-  >([])
+  >(loadHistoryFromCookies)
 
   useEffect(() => {
     let initialTime = 0
@@ -167,36 +243,57 @@ const PomodoroProvider: React.FC<{ children: React.ReactNode }> = ({ children })
       hasBeenCompletedBefore: false,
       dueDate,
     }
-    setTasks([...tasks, newTask])
+    const updatedTasks = [...tasks, newTask]
+    setTasks(updatedTasks)
+    saveTasksToCookie(updatedTasks)
   }
 
   const updateTask = (id: string, updates: Partial<Task>) => {
-    setTasks(tasks.map((task) => (task.id === id ? { ...task, ...updates } : task)))
+    const updatedTasks = tasks.map((task) => (task.id === id ? { ...task, ...updates } : task))
+    setTasks(updatedTasks)
+    saveTasksToCookie(updatedTasks)
   }
 
   const removeTask = (id: string) => {
-    setTasks(tasks.filter((task) => task.id !== id))
+    const updatedTasks = tasks.filter((task) => task.id !== id)
+    setTasks(updatedTasks)
+    saveTasksToCookie(updatedTasks)
+    
+    if (activeTaskId === id) {
+      setActiveTaskId(null)
+      saveActiveTaskToCookie(null)
+    }
   }
 
   const completeTask = (id: string, completed: boolean) => {
-    setTasks(tasks.map((task) => (task.id === id ? { ...task, completed, hasBeenCompletedBefore: true } : task)))
+    const updatedTasks = tasks.map((task) => (task.id === id ? { ...task, completed, hasBeenCompletedBefore: true } : task))
+    setTasks(updatedTasks)
+    saveTasksToCookie(updatedTasks)
   }
 
   const updateTaskEnergyLevel = (id: string, energyLevel: number) => {
-    setTasks(tasks.map((task) => (task.id === id ? { ...task, energyLevel } : task)))
+    const updatedTasks = tasks.map((task) => (task.id === id ? { ...task, energyLevel } : task))
+    setTasks(updatedTasks)
+    saveTasksToCookie(updatedTasks)
   }
 
   const clearAllTasks = () => {
     setTasks([])
     setActiveTaskId(null)
+    saveTasksToCookie([])
+    saveActiveTaskToCookie(null)
   }
 
   const clearCompletedTasks = () => {
-    setTasks(tasks.filter((task) => !task.completed))
+    const updatedTasks = tasks.filter((task) => !task.completed)
+    setTasks(updatedTasks)
+    saveTasksToCookie(updatedTasks)
   }
 
   const updateSettings = (newSettings: Partial<PomodoroContextProps>) => {
-    setSettings({ ...settings, ...newSettings })
+    const updatedSettings = { ...settings, ...newSettings }
+    setSettings(updatedSettings)
+    saveSettingsToCookie(updatedSettings)
   }
 
   const startTimer = () => {
@@ -318,20 +415,21 @@ const PomodoroProvider: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const addMeditationSession = (duration: number) => {
     const today = new Date().toISOString().split("T")[0]
-    setHistory((prevHistory) => {
-      const existingDay = prevHistory.find((day) => day.date === today)
-      if (existingDay) {
-        return prevHistory.map((day) =>
-          day.date === today
-            ? {
-                ...day,
-                totalMeditationMinutes: (day.totalMeditationMinutes || 0) + duration,
-              }
-            : day,
-        )
-      } else {
-        return [
-          ...prevHistory,
+    const updatedHistory = history.map((day) => {
+      if (day.date === today) {
+        return {
+          ...day,
+          totalMeditationMinutes: (day.totalMeditationMinutes || 0) + duration,
+        }
+      }
+      return day
+    })
+
+    const existingDay = history.find((day) => day.date === today)
+    const finalHistory = existingDay 
+      ? updatedHistory
+      : [
+          ...history,
           {
             date: today,
             totalPomodoros: 0,
@@ -341,19 +439,20 @@ const PomodoroProvider: React.FC<{ children: React.ReactNode }> = ({ children })
             tasksCompleted: 0,
           },
         ]
-      }
-    })
+    
+    setHistory(finalHistory)
+    saveHistoryToCookie(finalHistory)
   }
 
   useEffect(() => {
-    let intervalId: NodeJS.Timeout
+    let intervalId: NodeJS.Timeout | undefined
 
     if (timerStatus === "running" && timeRemaining > 0) {
       intervalId = setInterval(() => {
         setTimeRemaining((prevTime) => prevTime - 1)
       }, 1000)
     } else if (timeRemaining === 0) {
-      clearInterval(intervalId)
+      if (intervalId) clearInterval(intervalId)
       playAlarm() // Play alarm when timer reaches zero
 
       // Update task stats if in pomodoro mode and a task is active
@@ -373,29 +472,30 @@ const PomodoroProvider: React.FC<{ children: React.ReactNode }> = ({ children })
 
         // Update history
         const today = new Date().toISOString().split("T")[0]
-        setHistory((prevHistory) => {
-          const existingDay = prevHistory.find((day) => day.date === today)
-          const completedTasksToday = tasks.filter(
-            (task) =>
-              task.completed &&
-              task.hasBeenCompletedBefore &&
-              new Date(task.createdAt).toISOString().split("T")[0] === today,
-          ).length
+        const completedTasksToday = tasks.filter(
+          (task) =>
+            task.completed &&
+            task.hasBeenCompletedBefore &&
+            new Date(task.createdAt).toISOString().split("T")[0] === today,
+        ).length
 
-          if (existingDay) {
-            return prevHistory.map((day) =>
-              day.date === today
-                ? {
-                    ...day,
-                    totalPomodoros: day.totalPomodoros + 1,
-                    totalMinutes: day.totalMinutes + settings.pomodoroLength,
-                    tasksCompleted: completedTasksToday,
-                  }
-                : day,
-            )
-          } else {
-            return [
-              ...prevHistory,
+        const existingDay = history.find((day) => day.date === today)
+        const updatedHistory = history.map((day) => {
+          if (day.date === today) {
+            return {
+              ...day,
+              totalPomodoros: day.totalPomodoros + 1,
+              totalMinutes: day.totalMinutes + settings.pomodoroLength,
+              tasksCompleted: completedTasksToday,
+            }
+          }
+          return day
+        })
+
+        const finalHistory = existingDay 
+          ? updatedHistory
+          : [
+              ...history,
               {
                 date: today,
                 totalPomodoros: 1,
@@ -405,27 +505,29 @@ const PomodoroProvider: React.FC<{ children: React.ReactNode }> = ({ children })
                 tasksCompleted: completedTasksToday,
               },
             ]
-          }
-        })
+
+        setHistory(finalHistory)
+        saveHistoryToCookie(finalHistory)
       } else if (timerMode === "shortBreak" || timerMode === "longBreak") {
         // Update history with break time
         const today = new Date().toISOString().split("T")[0]
         const breakDuration = timerMode === "shortBreak" ? settings.shortBreakLength : settings.longBreakLength
 
-        setHistory((prevHistory) => {
-          const existingDay = prevHistory.find((day) => day.date === today)
-          if (existingDay) {
-            return prevHistory.map((day) =>
-              day.date === today
-                ? {
-                    ...day,
-                    totalBreakMinutes: (day.totalBreakMinutes || 0) + breakDuration,
-                  }
-                : day,
-            )
-          } else {
-            return [
-              ...prevHistory,
+        const existingDay = history.find((day) => day.date === today)
+        const updatedHistory = history.map((day) => {
+          if (day.date === today) {
+            return {
+              ...day,
+              totalBreakMinutes: (day.totalBreakMinutes || 0) + breakDuration,
+            }
+          }
+          return day
+        })
+
+        const finalHistory = existingDay 
+          ? updatedHistory
+          : [
+              ...history,
               {
                 date: today,
                 totalPomodoros: 0,
@@ -435,8 +537,9 @@ const PomodoroProvider: React.FC<{ children: React.ReactNode }> = ({ children })
                 tasksCompleted: 0,
               },
             ]
-          }
-        })
+
+        setHistory(finalHistory)
+        saveHistoryToCookie(finalHistory)
       }
 
       setTimerStatus("idle")
@@ -453,7 +556,23 @@ const PomodoroProvider: React.FC<{ children: React.ReactNode }> = ({ children })
     }
 
     return () => clearInterval(intervalId)
-  }, [timerStatus, timeRemaining, timerMode, settings, activeTaskId, tasks])
+  }, [timerStatus, timeRemaining, timerMode, settings, activeTaskId, tasks, history])
+
+  const resetAllData = () => {
+    setTasks([])
+    setActiveTaskId(null)
+    setHistory([])
+    setSettings(defaultSettings)
+    setTimerStatus("idle")
+    setTimerMode("pomodoro")
+    setTimeRemaining(defaultSettings.pomodoroLength * 60)
+    
+    // Clear all cookies
+    saveTasksToCookie([])
+    saveActiveTaskToCookie(null)
+    saveHistoryToCookie([])
+    saveSettingsToCookie(defaultSettings)
+  }
 
   const value: PomodoroState = {
     tasks,
@@ -477,6 +596,7 @@ const PomodoroProvider: React.FC<{ children: React.ReactNode }> = ({ children })
     resetTimer,
     playAlarm,
     addMeditationSession,
+    resetAllData,
     history,
   }
 
