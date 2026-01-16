@@ -1,3 +1,6 @@
+"use client"
+
+import { useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Timer from "@/components/timer"
 import TaskList from "@/components/task-list"
@@ -9,17 +12,22 @@ import { PomodoroProvider } from "@/components/pomodoro-context"
 import { ThemeToggle } from "@/components/theme-toggle"
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState("timer")
   return (
     <PomodoroProvider>
       <div className="container mx-auto p-4 max-w-4xl">
         <div className="flex justify-between items-center mb-8 mt-4">
-          <h1 className="text-3xl font-pacifico" style={{ fontFamily: "var(--font-pacifico)" }}>
+          <h1 
+            className="text-3xl font-pacifico cursor-pointer hover:opacity-80 transition-opacity" 
+            style={{ fontFamily: "var(--font-pacifico)" }}
+            onClick={() => setActiveTab("timer")}
+          >
             Flow State
           </h1>
           <ThemeToggle />
         </div>
 
-        <Tabs defaultValue="timer" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="timer">Timer</TabsTrigger>
             <TabsTrigger value="todo">Tasks</TabsTrigger>
